@@ -1,8 +1,9 @@
 # Pakettikauppa (M2) shipping module
 ### Install instructions:
-1. Copy files into your magento installation
-2. Activate module (but module should be activated by default)
-3. Insert your API credentials: Stores -> Configurations -> Paketikauppa
+1. Check that Magento can write to pub/labels directory
+2. Copy files into your magento installation
+3. Activate module (but module should be activated by default)
+4. Insert your API credentials: Stores -> Configurations -> Pakettikauppa
 
 ### How to use:
 1. Add item to cart and go to checkout

@@ -12,6 +12,17 @@ class Data extends \Magento\Framework\App\Helper\AbstractHelper
         $this->cart = $cart;
     }
 
+    public function getCarrierCode($carrier,$name){
+      $carrier = preg_replace('/[^\00-\255]+/u', '',strtolower(preg_replace('/\s+/', '', $carrier)));
+      $name = preg_replace('/[^\00-\255]+/u', '',strtolower(preg_replace('/\s+/', '', $name)));
+      $code = $carrier.'_'.$name;
+      if($code == 'posti_palautus'){
+        return false;
+      }else{
+        return $code;
+      }
+    }
+
     public function getZip(){
       $zip_pickup = $this->cart->getQuote()->getData('pickuppoint_zip');
       $zip_shipping = $this->cart->getQuote()->getShippingAddress()->getPostcode();

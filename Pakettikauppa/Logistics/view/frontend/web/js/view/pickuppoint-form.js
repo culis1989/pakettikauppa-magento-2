@@ -43,11 +43,12 @@ define([
                         var address = quote.shippingAddress();
                         var shippingMethod = quote.shippingMethod();
 
-                        address.trigger_reload = new Date().getTime();
+                        // address.trigger_reload = new Date().getTime();
 
                         rateRegistry.set(address.getKey(), null);
                         rateRegistry.set(address.getCacheKey(), null);
 
+                        var address = quote.shippingAddress();
                         quote.shippingAddress(address);
                       },
                       error : function(request,error){

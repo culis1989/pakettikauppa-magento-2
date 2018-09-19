@@ -7,7 +7,7 @@ class Client
     private $api_key;
     private $secret;
     private $base_uri;
-    private $user_agent = 'pk-client-lib/0.1';
+    private $user_agent = 'pk-client-lib/0.2';
 
     /**
      * Client constructor.
@@ -22,7 +22,8 @@ class Client
         if(isset($params['test_mode']) and $params['test_mode'] === true) {
             $this->api_key      = '00000000-0000-0000-0000-000000000000';
             $this->secret       = '1234567890ABCDEF';
-            $this->base_uri     = 'https://apitest.pakettikauppa.fi/';
+            $this->base_uri     = 'http://localhost:81';
+//            $this->base_uri     = 'https://apitest.pakettikauppa.fi';
         } else {
 
             if(!isset($params['api_key']))
@@ -33,7 +34,7 @@ class Client
 
             $this->api_key      = $params['api_key'];
             $this->secret       = $params['secret'];
-            $this->base_uri     = 'https://api.pakettikauppa.fi/';
+            $this->base_uri     = 'https://api.pakettikauppa.fi';
         }
     }
 
@@ -72,7 +73,7 @@ class Client
         return true;
     }
 
-    /**
+    /**a
      * Fetches the shipping label pdf for a given Shipment and
      * saves it as base64 encoded string to $pdf parameter on the Shipment.
      * The shipment must have $tracking_code and $reference set.
@@ -113,9 +114,50 @@ class Client
         return true;
     }
 
+    /**a
+     * Fetches the shipping label pdf for a given Shipment and
+     * saves it as base64 encoded string to $pdf parameter on the Shipment.
+     * The shipment must have $tracking_code and $reference set.
+     *
+     * @param Shipment $shipment
+     * @return bool
+     * @throws \Exception
+     */
+    public function fetchShippingLabels($trackingCodes)
+    {
+        $id     = str_replace('.', '', microtime(true));
+        $xml    = new \SimpleXMLElement('<eChannel/>');
+
+        $routing = $xml->addChild('ROUTING');
+        $routing->addChild('Routing.Account', $this->api_key);
+        $routing->addChild('Routing.Id', $id);
+        $routing->addChild('Routing.Key', md5("{$this->api_key}{$id}{$this->secret}"));
+
+        $label = $xml->addChild('PrintLabel');
+        $label['responseFormat'] = 'File';
+
+        foreach($trackingCodes as $trackingCode) {
+            $label->addChild('TrackingCode', $trackingCode);
+        }
+
+        $response = $this->doPost('/prinetti/get-shipping-label', null, $xml->asXML());
+
+        $response_xml = @simplexml_load_string($response);
+
+        if(!$response_xml) {
+            throw new \Exception("Failed to load response xml");
+        }
+
+        if($response_xml->{'response.status'} != 0) {
+            throw new \Exception("Error: {$response_xml->{'response.status'}}, {$response_xml->{'response.message'}}");
+        }
+
+        return $response_xml;
+    }
+
     /**
      * @param $tracking_code
-     * @return \Psr\Http\Message\StreamInterface
+     * @return mixed
      */
     public function getShipmentStatus($tracking_code)
     {
@@ -123,7 +165,7 @@ class Client
     }
 
     /**
-     * @return \Psr\Http\Message\StreamInterface
+     * @return mixed
      */
     public function listAdditionalServices()
     {
@@ -131,7 +173,7 @@ class Client
     }
 
     /**
-     * @return \Psr\Http\Message\StreamInterface
+     * @return mixed
      */
     public function listShippingMethods()
     {
@@ -139,19 +181,50 @@ class Client
     }
 
     /**
-     * @param $postcode
-     * @param null $street_address
-     * @param null $country
-     * @param null $service_provider
-     * @return \Psr\Http\Message\StreamInterface
+     * Search pickup points.
+     *
+     * @param int $postcode
+     * @param string $street_address
+     * @param string $country
+     * @param string $service_provider Limits results for to certain providers possible values: Posti, Matkahuolto, Db Schenker.
+     * @param int $limit 1 - 15
+     * @return mixed
      */
-    public function searchPickupPoints($street_address, $postcode = null, $country = null, $service_provider = null)
+    public function searchPickupPoints($postcode = null, $street_address = null, $country = null, $service_provider = null, $limit = 5)
     {
+        if ( ($postcode == null && $street_address == null) || (trim($postcode) == '' && trim($street_address) == '') ) {
+            return '[]';
+        }
+
         $post_params = array(
-            // 'postcode'          => $postcode
-            'address'           => $street_address
-            // 'country'           => $country,
-            // 'service_provider'  => $service_provider
+            'postcode'          => (string) $postcode,
+            'address'           => (string) $street_address,
+            'country'           => (string) $country,
+            'service_provider'  => (string) $service_provider,
+            'limit'             => (int) $limit
+        );
+
+        return $this->doPost('/pickup-points/search', $post_params);
+    }
+
+    /**
+     * Searches pickup points with a text query. For best results the query should contain a full address
+     *
+     * @param $query_text Text containing the full address, for example: "Keskustori 1, 33100 Tampere"
+     * @param string $service_provider $service_provider Limits results for to certain providers possible values: Posti, Matkahuolto, Db Schenker.
+     * @param int $limit 1 - 15
+     * @return mixed
+     */
+    public function searchPickupPointsByText($query_text, $service_provider = null, $limit = 5)
+    {
+        if ( $query_text == null || trim($query_text) == '' ) {
+            return '[]';
+        }
+
+        $post_params = array(
+            'query'             => (string) $query_text,
+            'service_provider'  => (string) $service_provider,
+            'limit'             => (int) $limit
         );
 
         return $this->doPost('/pickup-points/search', $post_params);
@@ -195,7 +268,7 @@ class Client
                 CURLOPT_HTTPHEADER      =>  $headers,
                 CURLOPT_POSTFIELDS      =>  $post_data
         );
-
+        
         $ch = curl_init();
         curl_setopt_array($ch, $options);
         $response = curl_exec($ch);

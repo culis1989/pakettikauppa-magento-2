@@ -1,123 +1,130 @@
 <?php
 namespace Pakettikauppa\Logistics\Model\Carrier;
-
 use Magento\Quote\Model\Quote\Address\RateRequest;
 use Magento\Shipping\Model\Rate\Result;
-use Pakettikauppa\Logistics\Helper\Data;
-use Pakettikauppa\Logistics\Helper\Api;
-use Magento\Sales\Model\Order\Shipment\Track;
-use Magento\Framework\App\Config\ScopeConfigInterface;
 
 class Pickuppoint extends \Magento\Shipping\Model\Carrier\AbstractCarrier implements
     \Magento\Shipping\Model\Carrier\CarrierInterface
 {
-    /**
-     * @var string
-     */
-    protected $_code = 'pktkp_pickuppoint';
 
-    /**
-     * @param \Magento\Framework\App\Config\ScopeConfigInterface $scopeConfig
-     * @param \Magento\Quote\Model\Quote\Address\RateResult\ErrorFactory $rateErrorFactory
-     * @param \Psr\Log\LoggerInterface $logger
-     * @param \Magento\Shipping\Model\Rate\ResultFactory $rateResultFactory
-     * @param \Magento\Quote\Model\Quote\Address\RateResult\MethodFactory $rateMethodFactory
-     * @param array $data
-     */
-    public function __construct(
-        \Magento\Quote\Model\Quote\Address\RateResult\ErrorFactory $rateErrorFactory,
-        \Psr\Log\LoggerInterface $logger,
-        \Magento\Shipping\Model\Rate\ResultFactory $rateResultFactory,
-        \Magento\Quote\Model\Quote\Address\RateResult\MethodFactory $rateMethodFactory,
-        \Magento\Store\Model\StoreManagerInterface $storeManager,
-        Track $trackFactory,
-        Api $apiHelper,
-        Data $dataHelper,
-        ScopeConfigInterface $scopeConfig,
-        array $data = []
-    ) {
-        $this->dataHelper = $dataHelper;
-        $this->apiHelper = $apiHelper;
-        $this->_rateResultFactory = $rateResultFactory;
-        $this->_rateMethodFactory = $rateMethodFactory;
-        $this->_storeManager=$storeManager;
-        $this->trackFactory = $trackFactory;
-        $this->scopeConfig = $scopeConfig;
-        parent::__construct($scopeConfig, $rateErrorFactory, $logger, $data);
+  protected $_code = 'pktkp_pickuppoint';
+
+  public function __construct(
+    \Psr\Log\LoggerInterface $logger,
+    \Magento\Framework\Registry $registry,
+    \Magento\Store\Model\StoreManagerInterface $storeManager,
+    \Pakettikauppa\Logistics\Helper\Data $dataHelper,
+    \Pakettikauppa\Logistics\Helper\Api $apiHelper,
+    \Magento\Quote\Model\Quote\Address\RateResult\MethodFactory $rateMethodFactory,
+    \Magento\Quote\Model\Quote\Address\RateResult\ErrorFactory $rateErrorFactory,
+    \Magento\Shipping\Model\Rate\ResultFactory $rateResultFactory,
+    \Magento\Sales\Model\Order\Shipment\Track $trackFactory,
+    \Magento\Framework\App\Config\ScopeConfigInterface $scopeConfig,
+    \Magento\Checkout\Model\Session $session,
+    array $data = []
+  ) {
+    $this->session = $session;
+    $this->registry = $registry;
+    $this->storeManager = $storeManager;
+    $this->dataHelper = $dataHelper;
+    $this->apiHelper = $apiHelper;
+    $this->rateMethodFactory = $rateMethodFactory;
+    $this->rateResultFactory = $rateResultFactory;
+    $this->trackFactory = $trackFactory;
+    $this->scopeConfig = $scopeConfig;
+    parent::__construct($scopeConfig, $rateErrorFactory, $logger, $data);
+  }
+
+  public function getAllowedMethods()
+  {
+      return ['pktkp_pickuppoint' => $this->getConfigData('name')];
+  }
+
+  public function collectRates(RateRequest $request)
+  {
+    if (!$this->getConfigFlag('active')) {
+        return false;
     }
-
-    /**
-     * @return array
-     */
-    public function getAllowedMethods()
-    {
-        return ['pktkp_pickuppoint' => $this->getConfigData('name')];
+    $result = $this->rateResultFactory->create();
+    $data = array();
+    if(null !== $this->registry->registry('pktkp_icons')){
+      $data = $this->registry->registry('pktkp_icons');
+      $this->registry->unregister('pktkp_icons');
     }
-
-    /**
-     * @param RateRequest $request
-     * @return bool|Result
-     */
-    public function collectRates(RateRequest $request)
-    {
-        if (!$this->getConfigFlag('active')) {
-            return false;
+    $zip = $this->dataHelper->getZip();
+    if ($zip) {
+      $pickuppoints = $this->apiHelper->getPickuppoints($zip);
+      if(count($pickuppoints)>0){
+        $cart_value = 0;
+        foreach($this->session->getQuote()->getAllItems() as $item){
+          $cart_value = $cart_value + ($item->getPrice() * $item->getQty());
         }
-        /** @var \Magento\Shipping\Model\Rate\Result $result */
-        $result = $this->_rateResultFactory->create();
 
+        foreach ($pickuppoints as $pp) {
 
-        $zip = $this->dataHelper->getZip();
-        if ($zip) {
-          $pickuppoints = $this->apiHelper->getPickuppoints($zip);
-          if(count($pickuppoints)>0){
-            foreach ($pickuppoints as $pp) {
-              /** @var \Magento\Quote\Model\Quote\Address\RateResult\Method $method */
-              $method = $this->_rateMethodFactory->create();
-
-              $method->setCarrier('pktkp_pickuppoint');
-              $method->setCarrierTitle($pp->provider." - ".$pp->name.": ".$pp->street_address.", ".$pp->postcode.", ".$pp->city);
-
-              $db_price =  $this->scopeConfig->getValue('carriers/pickuppoint/price');
-              $db_title =  $this->scopeConfig->getValue('carriers/pickuppoint/title');
-
-              $conf_price = $this->getConfigData('price');
-              $conf_title = $this->getConfigData('title');
-
-              if($db_price == ''){
-                $price = $conf_price;
-              }else{
-                $price = $db_price;
-              }
-              if($db_title == ''){
-                $title = $conf_title;
-              }else{
-                $title = $db_title;
-              }
-              $method->setMethod($pp->pickup_point_id);
-              $method->setMethodTitle($title);
-              $method->setPrice($price);
-              $method->setCost($price);
-
-              $result->append($method);
-            }
+          $carrier_code = $this->dataHelper->getCarrierCode($pp->provider,'pickuppoint');
+          if($carrier_code){
+            $enabled = $this->scopeConfig->getValue('carriers/'.$carrier_code.'/active');
+          }else{
+            $enabled = 0;
           }
-      }
-      return $result;
-    }
 
-    public function isTrackingAvailable()
-    {
-        return true;
+          if($enabled == 1){
+            $method = $this->rateMethodFactory->create();
+            $method->setCarrier('pktkp_pickuppoint');
+            $method->setCarrierTitle($pp->provider." - ".$pp->name.": ".$pp->street_address.", ".$pp->postcode.", ".$pp->city);
+            if(property_exists($pp,'provider_logo')){
+              $data[$pp->provider." - ".$pp->name.": ".$pp->street_address.", ".$pp->postcode.", ".$pp->city] = '<img src="'.$pp->provider_logo.'" alt="'.$pp->provider.'"/>';
+            }
+            $db_price =  $this->scopeConfig->getValue('carriers/'.$carrier_code.'/price');
+            $db_title =  $this->scopeConfig->getValue('carriers/'.$carrier_code.'/title');
+            $conf_price = $this->getConfigData('price');
+            $conf_title = $this->getConfigData('title');
+            if($db_price == ''){
+              $price = $conf_price;
+            }else{
+              $price = $db_price;
+            }
+            if($db_title == ''){
+              $title = $conf_title;
+            }else{
+              $title = $db_title;
+            }
+
+            // // DISCOUNT PRICE
+            $minimum =  $this->scopeConfig->getValue('carriers/'.$carrier_code.'/cart_price');
+            $new_price =  $this->scopeConfig->getValue('carriers/'.$carrier_code.'/new_price');
+            if($cart_value && $minimum && $cart_value >= $minimum){
+              $price = $new_price;
+            }
+
+            $method->setMethod($pp->pickup_point_id);
+            $method->setMethodTitle($title);
+            $method->setPrice($price);
+
+            $method->setCost($price);
+            $result->append($method);
+          }
+        }
+      }
     }
-    public function getTrackingInfo($tracking)
-    {
-      $title = 'Pakettikauppa';
-      $base_url = $this->_storeManager->getStore()->getBaseUrl().'logistics/tracking/';
-      $track = $this->trackFactory;
-      $track->setUrl($base_url.'?code='.$tracking)
-            ->setCarrierTitle($title)
-            ->setTracking($tracking);
-      return $track;
-    }
+    $this->registry->register('pktkp_icons', $data);
+    return $result;
+  }
+
+  public function isTrackingAvailable()
+  {
+      return true;
+  }
+
+  public function getTrackingInfo($tracking)
+  {
+    $title = 'Pakettikauppa';
+    $base_url = $this->storeManager->getStore()->getBaseUrl().'logistics/tracking/';
+    $track = $this->trackFactory;
+    $track->setUrl($base_url.'?code='.$tracking)
+          ->setCarrierTitle($title)
+          ->setTracking($tracking);
+    return $track;
+  }
 }

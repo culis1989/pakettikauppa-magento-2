@@ -302,18 +302,6 @@ define(
                 }
 
                 return true;
-            },
-            getMethodImage: function (carrier,method) {
-              if (method == 'pktkp_pickuppoint' || method == 'pktkp_homedelivery') {
-                var k = carrier.normalize();
-                carrier.normalize();
-                var s = k.toLowerCase();
-                var iu = s.replace(/ /g,'');
-                var p = iu.split('-')[0];
-                return "<img class='shipping_provider_logo_logistics' src='/app/code/Pakettikauppa/Logistics/view/frontend/web/images/providers/"+p+".png' alt='"+p+"'/>";
-              }else {
-                return '';
-              }
             }
         });
     }
